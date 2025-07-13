@@ -1,0 +1,6 @@
+
+langchain
+openai
+spacy
+sqlite3
+csv
