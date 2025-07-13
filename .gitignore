@@ -1,0 +1,10 @@
+# Python-specific ignores
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Project-specific ignores
+.env             # This will protect your API key
+*.db             # To ignore the SQLite database file
+mistakes_report.csv # To ignore the generated CSV report
