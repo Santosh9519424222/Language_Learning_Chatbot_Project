@@ -8,3 +8,11 @@ venv/
 .env             # This will protect your API key
 *.db             # To ignore the SQLite database file
 mistakes_report.csv # To ignore the generated CSV report
+# Runtime logs and local artifacts
+backend.log
+frontend.log
+uvicorn.log
+demo.db
+backend/data/
+.idea/
+.env

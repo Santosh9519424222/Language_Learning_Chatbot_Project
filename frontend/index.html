@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Agent PDF Learning Platform</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 40px;
+        }
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .status-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .status-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .status-item h4 {
+            color: #667eea;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .status-item p {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #333;
+        }
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .badge.healthy {
+            background: #d4edda;
+            color: #155724;
+        }
+        .badge.degraded {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .badge.unavailable {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .endpoints {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .endpoints h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .endpoint-list {
+            list-style: none;
+        }
+        .endpoint-list li {
+            background: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .endpoint-list li span {
+            font-weight: bold;
+            color: #667eea;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Multi-Agent PDF Learning Platform</h1>
+            <p>AI-Powered Language Learning with 7 Specialized Agents</p>
+        </div>
+
+        <div class="content">
+            <div class="status-card" style="margin-top:15px;">
+                <h3>🔌 Backend Connection</h3>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                    <input id="backendUrlInput" type="text" placeholder="Backend base (e.g. http://localhost:8080)" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:6px;" />
+                    <button id="autoDetectBtn" type="button" style="background:#28a745;">Auto-Detect</button>
+                    <button id="saveBackendBtn" type="button">Manual Test</button>
+                </div>
+                <small style="display:block; margin-top:8px; color:#555;">Click "Auto-Detect" to find backend automatically. Works with tunnels, gateways, and localhost.</small>
+                <div id="backendStatus" style="margin-top:10px; font-size:0.9em; color:#333;">Click Auto-Detect to connect...</div>
+            </div>
+
+            <div class="status-card">
+                <h3>🔥 System Status</h3>
+                <div id="statusContent" class="loading">Loading system status...</div>
+            </div>
+
+            <div class="endpoints">
+                <h3>📡 Available API Endpoints</h3>
+                <ul class="endpoint-list">
+                    <li>
+                        <span>GET /health</span>
+                        <button onclick="testEndpoint('/health')">Test</button>
+                    </li>
+                    <li>
+                        <span>GET /</span>
+                        <button onclick="testEndpoint('/')">Test</button>
+                    </li>
+                    <li>
+                        <span>GET /docs</span>
+                        <button onclick="window.open(API_BASE + '/docs', '_blank')">Open Swagger UI</button>
+                    </li>
+                    <li>
+                        <span>POST /api/pdfs/upload</span>
+                        <button onclick="alert('Use Swagger UI or cURL to upload PDFs')">Info</button>
+                    </li>
+                    <li>
+                        <span>POST /api/chat/question</span>
+                        <button onclick="alert('Use Swagger UI or cURL to ask questions')">Info</button>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="status-card" style="margin-top: 20px;">
+                <h3>🚀 Quick Start</h3>
+                <p style="margin-bottom: 10px;">To interact with the API:</p>
+                <ol style="margin-left: 20px; line-height: 1.8;">
+                    <li>Visit <code>/docs</code> for interactive API documentation</li>
+                    <li>Use <code>curl</code> or Postman to test endpoints</li>
+                    <li>Upload a PDF via <code>POST /api/pdfs/upload</code></li>
+                    <li>Ask questions via <code>POST /api/chat/question</code></li>
+                    <li>Get language feedback via <code>POST /api/language-feedback</code></li>
+                </ol>
+            </div>
+
+            <div class="status-card" style="margin-top: 20px;">
+                <h3>📄 Upload PDF for Learning</h3>
+                <form id="uploadForm" style="background:#f8f9fa; padding:20px; border-radius:8px;">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Step 1: Choose PDF File</label>
+                        <input type="file" id="pdfFile" accept="application/pdf" required style="display:none;" />
+                        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                            <button type="button" id="chooseFileBtn" style="background:#667eea; padding:12px 24px; border-radius:6px; font-weight:600; cursor:pointer;">
+                                📁 Choose PDF from Computer
+                            </button>
+                            <span id="fileName" style="color:#555; font-size:0.95em; font-style:italic;">No file selected</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Step 2: OCR Settings</label>
+                        <label style="display:inline-flex; align-items:center; cursor:pointer; background:white; padding:10px; border-radius:6px;">
+                            <input type="checkbox" id="enableOcr" style="margin-right:10px; width:20px; height:20px; cursor:pointer;" />
+                            <span style="color:#333;">Enable OCR (for scanned/image-based PDFs)</span>
+                        </label>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Step 3: User Identification</label>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <input type="text" id="userId" placeholder="Enter or generate UUID" style="flex:1; min-width:250px; padding:12px; border:2px solid #ddd; border-radius:6px; font-size:0.95em;" required />
+                            <button type="button" id="generateUuidBtn" style="background:#6c757d; padding:12px 20px; border-radius:6px; white-space:nowrap;">
+                                🎲 Generate UUID
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" style="background:#28a745; padding:14px 32px; font-size:1.1em; font-weight:700; border-radius:6px; cursor:pointer; width:100%; max-width:300px;">
+                        🚀 Upload & Process PDF
+                    </button>
+                </form>
+                <div id="uploadResult" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Backend API base resolution
+        function deriveDefaultBackendBase() {
+            // Try same hostname on port 8080
+            return window.location.protocol + '//' + window.location.hostname + ':8080';
+        }
+        const storedBase = localStorage.getItem('backend_base');
+        let API_BASE = storedBase || deriveDefaultBackendBase();
+        const backendUrlInput = document.getElementById('backendUrlInput');
+        if (backendUrlInput) backendUrlInput.value = API_BASE;
+        const backendStatusEl = document.getElementById('backendStatus');
+
+        function setBackendBase(newBase) {
+            API_BASE = newBase.replace(/\/$/, '');
+            localStorage.setItem('backend_base', API_BASE);
+        }
+
+        document.getElementById('saveBackendBtn').addEventListener('click', () => {
+            const val = backendUrlInput.value.trim();
+            if (!val) return;
+            setBackendBase(val);
+            backendStatusEl.textContent = 'Testing ' + API_BASE + ' ...';
+            testBackendHealth();
+        });
+
+        // Auto-detect button handler
+        document.getElementById('autoDetectBtn').addEventListener('click', async () => {
+            backendStatusEl.innerHTML = '<span style="color:#0066cc;">🔍 Auto-detecting...</span>';
+            const candidates = [
+                'http://localhost:8080',
+                window.location.protocol + '//' + window.location.hostname + ':8080'
+            ];
+            const unique = [...new Set(candidates)];
+
+            for (const url of unique) {
+                try {
+                    backendStatusEl.innerHTML = '<span style="color:#0066cc;">🔍 Trying ' + url + '...</span>';
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    const resp = await fetch(url + '/health', {mode:'cors', signal: controller.signal});
+                    clearTimeout(timeoutId);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        setBackendBase(url);
+                        backendUrlInput.value = url;
+                        backendStatusEl.innerHTML = '<span style="color:green;">✅ Connected:</span> ' + url;
+                        renderStatus(data);
+                        return;
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            backendStatusEl.innerHTML = '<span style="color:#b30000;">❌ Failed</span> - Enter URL manually';
+            document.getElementById('statusContent').innerHTML = '<p style="color:#b30000;">Backend not found. Enter URL manually.</p>';
+        });
+
+        async function fetchWithRetry(url, options = {}, retries = 3, delayMs = 800) {
+            for (let attempt = 0; attempt <= retries; attempt++) {
+                try {
+                    const resp = await fetch(url, options);
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    return resp;
+                } catch (err) {
+                    if (attempt === retries) throw err;
+                    await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+                }
+            }
+        }
+
+        async function testBackendHealth() {
+            try {
+                const resp = await fetchWithRetry(API_BASE + '/health', {mode:'cors'}, 2);
+                const data = await resp.json();
+                backendStatusEl.innerHTML = '<span style="color:green;">✅ Connected</span> ' + API_BASE + ' | Agents: ' + data.agents_active + ' | Vector: ' + data.services.vector_store;
+                renderStatus(data);
+            } catch (e) {
+                backendStatusEl.innerHTML = '<span style="color:#b30000;">❌ Failed:</span> ' + e.message + ' (URL: ' + API_BASE + '/health)';
+                // Show error block in system status
+                const statusContent = document.getElementById('statusContent');
+                if (statusContent) {
+                    statusContent.innerHTML = '<p style="color:#b30000;">Failed to load status: ' + e.message + '<br/>Check port forwarding or update backend URL above.</p>';
+                }
+            }
+        }
+
+        function renderStatus(data) {
+            if (!data) return;
+            const statusContent = document.getElementById('statusContent');
+            if (!statusContent) return;
+            let html = `
+                <div class="status-grid">
+                    <div class="status-item"><h4>Overall Status</h4><p><span class="badge ${data.status}">${data.status.toUpperCase()}</span></p></div>
+                    <div class="status-item"><h4>Agents Active</h4><p>${data.agents_active}</p></div>
+                    <div class="status-item"><h4>Environment</h4><p>${data.environment}</p></div>
+                </div>
+                <h4 style="margin-top:20px;margin-bottom:10px;">Services:</h4>
+                <div class="status-grid">
+                    ${Object.entries(data.services).map(([svc, st]) => `
+                        <div class="status-item"><h4>${svc.replace('_',' ').toUpperCase()}</h4><p><span class="badge ${st}">${st}</span></p></div>
+                    `).join('')}
+                </div>
+            `;
+            if (data.gemini_quota) {
+                html += `
+                    <h4 style="margin-top:20px;margin-bottom:10px;">Gemini Quota:</h4>
+                    <div class="status-grid">
+                        <div class="status-item"><h4>Remaining</h4><p>${data.gemini_quota.requests_remaining}/${data.gemini_quota.max_requests_per_minute}</p></div>
+                        <div class="status-item"><h4>Model</h4><p>${data.gemini_quota.model}</p></div>
+                    </div>
+                `;
+            }
+            statusContent.innerHTML = html;
+        }
+
+        async function loadStatus() {
+            // Only attempt automatically once; subsequent manual tests via button
+            await testBackendHealth();
+        }
+
+        async function testEndpoint(endpoint) {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Testing...';
+
+            try {
+                const response = await fetch(API_BASE + endpoint, { mode: 'cors' });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                alert('✅ Success!\n\nEndpoint: ' + API_BASE + endpoint + '\n\nResponse:\n' + JSON.stringify(data, null, 2).substring(0, 500));
+            } catch (error) {
+                alert('❌ Error!\n\nEndpoint: ' + API_BASE + endpoint + '\n\nError: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        // File chooser button handler
+        // File chooser button handler
+        const chooseFileBtn = document.getElementById('chooseFileBtn');
+        const pdfFileInput = document.getElementById('pdfFile');
+        const fileNameDisplay = document.getElementById('fileName');
+
+        if (chooseFileBtn && pdfFileInput && fileNameDisplay) {
+            chooseFileBtn.addEventListener('click', () => {
+                pdfFileInput.click();
+            });
+
+            pdfFileInput.addEventListener('change', () => {
+                const file = pdfFileInput.files && pdfFileInput.files[0];
+                if (file) {
+                    fileNameDisplay.textContent = '✓ ' + file.name + ' (' + (file.size / 1024 / 1024).toFixed(2) + ' MB)';
+                    fileNameDisplay.style.color = '#28a745';
+                    fileNameDisplay.style.fontWeight = '600';
+                } else {
+                    fileNameDisplay.textContent = 'No file selected';
+                    fileNameDisplay.style.color = '#555';
+                    fileNameDisplay.style.fontWeight = 'normal';
+                }
+            });
+        }
+
+        // UUID generator
+        const generateUuidBtn = document.getElementById('generateUuidBtn');
+        const userIdInput = document.getElementById('userId');
+        if (generateUuidBtn && userIdInput) {
+            generateUuidBtn.addEventListener('click', () => {
+                // Simple UUID v4 generator
+                const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    const r = Math.random() * 16 | 0;
+                    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+                userIdInput.value = uuid;
+            });
+        }
+
+        // Upload form handler
+        const uploadForm = document.getElementById('uploadForm');
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const fileInput = document.getElementById('pdfFile');
+                const userIdInput = document.getElementById('userId');
+                const enableOcrInput = document.getElementById('enableOcr');
+                const resultEl = document.getElementById('uploadResult');
+                if (!fileInput || !userIdInput || !enableOcrInput) return;
+                const file = fileInput.files && fileInput.files[0];
+                if (!file) {
+                    resultEl.innerHTML = '<p style="color:red; background:#ffe6e6; padding:10px; border-radius:5px;">❌ Please select a PDF file first.</p>';
+                    return;
+                }
+                if (!userIdInput.value.trim()) {
+                    resultEl.innerHTML = '<p style="color:red; background:#ffe6e6; padding:10px; border-radius:5px;">❌ Please enter a User ID or click Generate UUID.</p>';
+                    return;
+                }
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('user_id', userIdInput.value.trim());
+                fd.append('language', '');
+                fd.append('enable_ocr', enableOcrInput.checked ? 'true' : 'false');
+                resultEl.innerHTML = '<p style="color:#0066cc; background:#e6f2ff; padding:10px; border-radius:5px;">⏳ Uploading and processing... This may take 10-30 seconds.</p>';
+                try {
+                    const resp = await fetch(API_BASE + '/api/pdfs/upload', { method:'POST', body: fd });
+                    if (!resp.ok) {
+                        const errorText = await resp.text();
+                        throw new Error('Upload failed: HTTP ' + resp.status + ' - ' + errorText.substring(0, 100));
+                    }
+                    const data = await resp.json();
+                    resultEl.innerHTML = '<div style="background:#d4edda; padding:15px; border-radius:5px; border-left:4px solid #28a745;">' +
+                        '<h4 style="color:#155724; margin-bottom:10px;">✅ Upload Successful!</h4>' +
+                        '<p><strong>File ID:</strong> ' + data.file_id + '</p>' +
+                        '<p><strong>Filename:</strong> ' + data.filename + '</p>' +
+                        '<p><strong>Pages:</strong> ' + data.total_pages + '</p>' +
+                        '<p><strong>Language:</strong> ' + data.detected_language + '</p>' +
+                        '<p><strong>Status:</strong> ' + data.status + '</p>' +
+                        '<p style="margin-top:10px; color:#555;"><em>' + data.message + '</em></p>' +
+                        '</div>';
+                    // Reset form
+                    uploadForm.reset();
+                    fileNameDisplay.textContent = 'No file selected';
+                    fileNameDisplay.style.color = '#555';
+                    fileNameDisplay.style.fontWeight = 'normal';
+                } catch (err) {
+                    resultEl.innerHTML = '<div style="background:#f8d7da; padding:15px; border-radius:5px; border-left:4px solid #dc3545;">' +
+                        '<h4 style="color:#721c24; margin-bottom:10px;">❌ Upload Failed</h4>' +
+                        '<p style="color:#721c24;">' + err.message + '</p>' +
+                        '<p style="margin-top:10px; font-size:0.9em; color:#555;">Make sure backend is connected (check Backend Connection panel above).</p>' +
+                        '</div>';
+                }
+            });
+        }
+
+        // Q&A Form Handler
+        const qaForm = document.getElementById('qaForm');
+        if (qaForm) {
+            qaForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const resultEl = document.getElementById('qaResult');
+                const fileId = document.getElementById('qaFileId').value.trim();
+                const question = document.getElementById('qaQuestion').value.trim();
+                const level = document.getElementById('qaLevel').value;
+
+                resultEl.innerHTML = '<p style="color:#0066cc; background:#e6f2ff; padding:10px; border-radius:5px;">⏳ Getting answer...</p>';
+
+                try {
+                    const resp = await fetch(API_BASE + '/api/chat/question', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            file_id: fileId,
+                            user_id: userIdInput.value || '00000000-0000-0000-0000-000000000000',
+                            question: question,
+                            language: 'English',
+                            user_language_level: level
+                        })
+                    });
+
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+
+                    resultEl.innerHTML = '<div style="background:#e8f5e9; padding:15px; border-radius:5px; border-left:4px solid #4caf50;">' +
+                        '<h4 style="color:#2e7d32; margin-bottom:10px;">💡 Answer:</h4>' +
+                        '<p style="white-space:pre-wrap;">' + data.answer + '</p>' +
+                        (data.source_section ? '<p style="margin-top:10px;"><strong>Source:</strong> ' + data.source_section + (data.page_number ? ' (Page ' + data.page_number + ')' : '') + '</p>' : '') +
+                        (data.confidence_score ? '<p><strong>Confidence:</strong> ' + (data.confidence_score * 100).toFixed(0) + '%</p>' : '') +
+                        '</div>';
+                } catch (err) {
+                    resultEl.innerHTML = '<div style="background:#ffebee; padding:15px; border-radius:5px; border-left:4px solid #f44336;">' +
+                        '<h4 style="color:#c62828;">❌ Error</h4><p>' + err.message + '</p></div>';
+                }
+            });
+        }
+
+        // Language Feedback Form Handler
+        const feedbackForm = document.getElementById('feedbackForm');
+        if (feedbackForm) {
+            feedbackForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const resultEl = document.getElementById('feedbackResult');
+                const sentence = document.getElementById('userSentence').value.trim();
+                const context = document.getElementById('feedbackContext').value.trim();
+
+                resultEl.innerHTML = '<p style="color:#0066cc; background:#e6f2ff; padding:10px; border-radius:5px;">⏳ Analyzing...</p>';
+
+                try {
+                    const resp = await fetch(API_BASE + '/api/language-feedback', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            pdf_id: '00000000-0000-0000-0000-000000000000',
+                            user_id: userIdInput.value || '00000000-0000-0000-0000-000000000000',
+                            user_output: sentence,
+                            correct_form: '',
+                            context: context
+                        })
+                    });
+
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+
+                    let html = '<div style="background:#fff3e0; padding:15px; border-radius:5px; border-left:4px solid #ff9800;">';
+                    html += '<h4 style="color:#e65100; margin-bottom:10px;">✏️ Feedback:</h4>';
+
+                    if (data.grammar_feedback) {
+                        html += '<p><strong>Grammar:</strong> ' + data.grammar_feedback + '</p>';
+                    }
+
+                    if (data.vocabulary_suggestions && data.vocabulary_suggestions.length > 0) {
+                        html += '<p style="margin-top:10px;"><strong>Vocabulary Suggestions:</strong></p><ul style="margin-left:20px;">';
+                        data.vocabulary_suggestions.forEach(s => {
+                            html += '<li>' + s.original + ' → ' + (s.suggestions ? s.suggestions.join(', ') : '') +
+                                   (s.explanation ? ' (' + s.explanation + ')' : '') + '</li>';
+                        });
+                        html += '</ul>';
+                    }
+
+                    if (data.fluency_notes) {
+                        html += '<p style="margin-top:10px;"><strong>Fluency:</strong> ' + data.fluency_notes + '</p>';
+                    }
+
+                    if (data.encouragement) {
+                        html += '<p style="margin-top:10px; color:#2e7d32;"><strong>💪 ' + data.encouragement + '</strong></p>';
+                    }
+
+                    html += '</div>';
+                    resultEl.innerHTML = html;
+                } catch (err) {
+                    resultEl.innerHTML = '<div style="background:#ffebee; padding:15px; border-radius:5px; border-left:4px solid #f44336;">' +
+                        '<h4 style="color:#c62828;">❌ Error</h4><p>' + err.message + '</p></div>';
+                }
+            });
+        }
+
+        // Translation Form Handler
+        const translateForm = document.getElementById('translateForm');
+        if (translateForm) {
+            translateForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const resultEl = document.getElementById('translateResult');
+                const fileId = document.getElementById('translateFileId').value.trim();
+                const targetLang = document.getElementById('targetLanguage').value;
+
+                resultEl.innerHTML = '<p style="color:#0066cc; background:#e6f2ff; padding:10px; border-radius:5px;">⏳ Translating...</p>';
+
+                try {
+                    const resp = await fetch(API_BASE + '/api/translate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            file_id: fileId,
+                            target_language: targetLang,
+                            include_pronunciation: true
+                        })
+                    });
+
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+
+                    let html = '<div style="background:#e3f2fd; padding:15px; border-radius:5px; border-left:4px solid #2196F3;">';
+                    html += '<h4 style="color:#0d47a1; margin-bottom:10px;">🌍 Translations:</h4>';
+
+                    if (data.translated_topics && data.translated_topics.length > 0) {
+                        html += '<div style="margin-top:10px;">';
+                        data.translated_topics.forEach(t => {
+                            html += '<div style="background:white; padding:10px; margin-bottom:10px; border-radius:4px;">';
+                            html += '<p><strong>Original:</strong> ' + (t.original_name || t.original_description || '') + '</p>';
+                            html += '<p><strong>Translation:</strong> ' + (t.translated_name || t.translated_description || '') + '</p>';
+                            if (t.pronunciation) {
+                                html += '<p style="color:#666;"><em>Pronunciation: ' + t.pronunciation + '</em></p>';
+                            }
+                            html += '</div>';
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<p>No translations available.</p>';
+                    }
+
+                    html += '</div>';
+                    resultEl.innerHTML = html;
+                } catch (err) {
+                    resultEl.innerHTML = '<div style="background:#ffebee; padding:15px; border-radius:5px; border-left:4px solid #f44336;">' +
+                        '<h4 style="color:#c62828;">❌ Error</h4><p>' + err.message + '</p></div>';
+                }
+            });
+        }
+
+        // Report Form Handler
+        const reportForm = document.getElementById('reportForm');
+        if (reportForm) {
+            reportForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const resultEl = document.getElementById('reportResult');
+                const fileId = document.getElementById('reportFileId').value.trim();
+                const userId = document.getElementById('reportUserId').value.trim();
+
+                resultEl.innerHTML = '<p style="color:#0066cc; background:#e6f2ff; padding:10px; border-radius:5px;">⏳ Generating report...</p>';
+
+                try {
+                    const resp = await fetch(API_BASE + '/api/reports/' + fileId + '?user_id=' + userId, {
+                        method: 'GET'
+                    });
+
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+
+                    let html = '<div style="background:#f3e5f5; padding:15px; border-radius:5px; border-left:4px solid #9c27b0;">';
+                    html += '<h4 style="color:#4a148c; margin-bottom:10px;">📊 Learning Report:</h4>';
+
+                    if (data.summary) {
+                        html += '<p><strong>Summary:</strong> ' + data.summary + '</p>';
+                    }
+
+                    if (data.accuracy_percentage !== undefined) {
+                        html += '<p style="margin-top:10px;"><strong>Accuracy:</strong> ' + data.accuracy_percentage.toFixed(1) + '%</p>';
+                    }
+
+                    if (data.total_sessions) {
+                        html += '<p><strong>Total Sessions:</strong> ' + data.total_sessions + '</p>';
+                    }
+
+                    if (data.total_mistakes) {
+                        html += '<p><strong>Total Mistakes:</strong> ' + data.total_mistakes + '</p>';
+                    }
+
+                    if (data.learning_gaps && data.learning_gaps.length > 0) {
+                        html += '<p style="margin-top:10px;"><strong>Learning Gaps:</strong></p><ul style="margin-left:20px;">';
+                        data.learning_gaps.forEach(g => {
+                            html += '<li>' + g.topic + ': ' + g.description + ' (' + g.severity + ')</li>';
+                        });
+                        html += '</ul>';
+                    }
+
+                    if (data.recommendations && data.recommendations.length > 0) {
+                        html += '<p style="margin-top:10px;"><strong>Recommendations:</strong></p><ul style="margin-left:20px;">';
+                        data.recommendations.forEach(r => {
+                            html += '<li>' + r + '</li>';
+                        });
+                        html += '</ul>';
+                    }
+
+                    html += '</div>';
+                    resultEl.innerHTML = html;
+                } catch (err) {
+                    resultEl.innerHTML = '<div style="background:#ffebee; padding:15px; border-radius:5px; border-left:4px solid #f44336;">' +
+                        '<h4 style="color:#c62828;">❌ Error</h4><p>' + err.message + '</p></div>';
+                }
+            });
+        }
+
+        // Initial load - trigger auto-detect automatically
+        document.getElementById('autoDetectBtn').click();
+    </script>
+</body>
+</html>

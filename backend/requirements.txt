@@ -1,0 +1,71 @@
+# FastAPI & Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Vector Database
+chromadb==0.4.22
+sentence-transformers==2.3.1
+
+# PDF Processing
+pdfplumber==0.11.0
+PyPDF2==3.0.1
+pypdf==3.17.4
+
+# AI & LLM
+google-generativeai==0.3.2
+langchain==0.1.5
+langchain-google-genai==0.0.6
+langgraph==0.0.20
+
+# Language Processing
+spacy==3.7.2
+langdetect==1.0.9
+textblob==0.17.1
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+aiohttp==3.9.1
+httpx==0.26.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.3
+
+# Logging & Monitoring
+python-json-logger==2.0.7
+colorlog==6.8.0
+
+# Cloud & Storage
+google-cloud-storage==2.14.0
+google-cloud-logging==3.9.0
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Rate Limiting
+slowapi==0.1.9
+
+# Export & Reports
+reportlab==4.0.9
+matplotlib==3.8.2
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+httpx==0.26.0
+
+# Development
+black==23.12.1
+flake8==7.0.0
+mypy==1.8.0
+
