@@ -92,24 +92,47 @@ async def upload_pdf(
         use_ocr = str(enable_ocr).lower() in {"true", "1", "yes"}
         upload_result = upload_agent.process(file_path, user_id, enable_ocr=use_ocr)
 
-        if not upload_result.success:
-            delete_pdf_file(file_path)
-            raise HTTPException(status_code=400, detail=upload_result.error)
+        # Handle agent response (can be dict or AgentResponse TypedDict)
+        if isinstance(upload_result, dict):
+            success = upload_result.get('success', False)
+            error = upload_result.get('error')
+            data = upload_result.get('data', {})
+        else:
+            success = getattr(upload_result, 'success', False)
+            error = getattr(upload_result, 'error', None)
+            data = getattr(upload_result, 'data', {})
 
-        upload_data = upload_result.data
+        if not success:
+            delete_pdf_file(file_path)
+            raise HTTPException(status_code=400, detail=error or "PDF processing failed")
+
+        upload_data = data
 
         # Step 3: Create PDF record in database
+        # For SQLite compatibility, convert UUIDs to strings
+        from models.database import _is_sqlite
+
+        pdf_id = uuid.uuid4()
+        try:
+            user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid user_id format. Must be a valid UUID.")
+
+        # Convert to string if using SQLite
+        pdf_id_value = str(pdf_id) if _is_sqlite else pdf_id
+        user_id_value = str(user_uuid) if _is_sqlite else user_uuid
+
         pdf_record = PDF(
-            id=uuid.uuid4(),
-            user_id=uuid.UUID(user_id),
+            id=pdf_id_value,
+            user_id=user_id_value,
             filename=file.filename,
             file_path=file_path,
-            file_size=upload_data['file_size'],
-            total_pages=upload_data['page_count'],
+            file_size=upload_data.get('file_size', 0),
+            total_pages=upload_data.get('page_count', 1),
             status='processing',
-            language=upload_data['detected_language'],
+            language=upload_data.get('detected_language', 'en'),
             detected_topic=upload_data.get('ai_analysis', {}).get('topic', 'Unknown'),
-            pdf_metadata=upload_data['metadata']
+            pdf_metadata=upload_data.get('metadata', {}) or {}
         )
         db.add(pdf_record)
         db.commit()
@@ -118,7 +141,6 @@ async def upload_pdf(
         # Step 4: Extract topics and vocabulary (sync for now)
         if vector_store is None:
             logger.warning("Vector store not initialized; skipping chunk indexing")
-            extraction_topics = []
             extraction_data = {"topics": []}
         else:
             extraction_agent = ExtractionAgent(gemini_client, vector_store)
@@ -127,7 +149,12 @@ async def upload_pdf(
                 pdf_id=str(pdf_record.id),
                 language=upload_data['detected_language']
             )
-            extraction_data = extraction_result.data if extraction_result.success else {"topics": []}
+
+            # Handle agent response (can be dict or object)
+            if isinstance(extraction_result, dict):
+                extraction_data = extraction_result.get('data', {}) if extraction_result.get('success') else {"topics": []}
+            else:
+                extraction_data = getattr(extraction_result, 'data', {}) if getattr(extraction_result, 'success', False) else {"topics": []}
 
         # Save topics to database
         for topic_data in extraction_data.get('topics', [])[:20]:
@@ -169,6 +196,22 @@ async def upload_pdf(
                 _delete(file_path)
         except Exception:
             pass
+
+        # Return detailed error message
+        error_msg = str(e)
+        if 'gemini_client' in error_msg.lower():
+            error_msg = "Gemini AI service not initialized. Please check API configuration."
+        elif 'file' in error_msg.lower():
+            error_msg = f"File processing error: {error_msg}"
+        elif 'database' in error_msg.lower():
+            error_msg = "Database error. Please try again later."
+        else:
+            error_msg = f"PDF upload failed: {error_msg}"
+
+        raise HTTPException(
+            status_code=500,
+            detail=error_msg
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 

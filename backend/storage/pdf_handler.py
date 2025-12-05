@@ -16,9 +16,22 @@ from pathlib import Path
 import pdfplumber
 from PyPDF2 import PdfReader
 from langdetect import detect, detect_langs, LangDetectException
-import magic
-import pytesseract
-from PIL import Image
+
+# Optional imports - make them fail gracefully
+try:
+    import magic
+    HAS_MAGIC = True
+except ImportError:
+    HAS_MAGIC = False
+    logger.warning("python-magic not installed. PDF validation will be limited.")
+
+try:
+    import pytesseract
+    from PIL import Image
+    HAS_OCR = True
+except ImportError:
+    HAS_OCR = False
+    logger.warning("pytesseract or PIL not installed. OCR features will be disabled.")
 
 logger = logging.getLogger(__name__)
 

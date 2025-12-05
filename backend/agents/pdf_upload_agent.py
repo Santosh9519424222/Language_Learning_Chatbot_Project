@@ -1,147 +1,157 @@
 """
 PDF Upload Agent
-Validates PDFs, extracts metadata, detects language
+Handles PDF validation, metadata extraction, and language detection
 
 Author: Santosh Yadav
 Date: November 2025
 """
 
 import logging
-import time
-from typing import Dict, Any
-
-from agents.base_agent import BaseAgent, AgentResponse
-from prompts.system_prompts import PDF_UPLOAD_AGENT_PROMPT
-from config.gemini_config import GeminiClient
-from storage.pdf_handler import PDFHandler
+from typing import Optional
+from .base_agent import LLMAgent, AgentResponse
 
 logger = logging.getLogger(__name__)
 
 
-class PDFUploadAgent(BaseAgent):
+class PDFUploadAgent(LLMAgent):
     """
-    Agent responsible for validating and analyzing uploaded PDFs.
+    Agent for handling PDF uploads and initial processing.
+
+    Responsibilities:
+    - Validate PDF format and integrity
+    - Extract metadata (title, author, creation date)
+    - Detect language
+    - Extract basic text
+    - Identify document topic
     """
 
-    def __init__(self, gemini_client: GeminiClient):
+    def __init__(self, gemini_client, model: str = "gemini-pro"):
         """
         Initialize PDF Upload Agent.
 
         Args:
-            gemini_client: Gemini API client instance
+            gemini_client: Initialized GeminiClient
+            model: LLM model to use
         """
-        super().__init__(
-            gemini_client=gemini_client,
-            agent_name="PDFUploadAgent",
-            system_prompt=PDF_UPLOAD_AGENT_PROMPT,
-            temperature=0.3  # Lower temperature for more consistent validation
-        )
-        self.pdf_handler = PDFHandler()
+        super().__init__(gemini_client, name="pdf_upload", model=model)
 
-    def process(self, file_path: str, user_id: str, enable_ocr: bool = False) -> AgentResponse:
+    def process(
+        self,
+        file_path: str,
+        user_id: str,
+        enable_ocr: bool = False
+    ) -> AgentResponse:
         """
-        Process uploaded PDF with optional OCR.
+        Process uploaded PDF file.
 
         Args:
-            file_path: Path to uploaded PDF file
+            file_path: Path to PDF file
             user_id: User identifier
-            enable_ocr: Flag to enable OCR processing
+            enable_ocr: Whether to enable OCR for image-based PDFs
 
         Returns:
-            AgentResponse: Validation results and metadata
+            AgentResponse with extracted metadata
         """
+        import time
         start_time = time.time()
 
         try:
-            self.logger.info(f"Processing PDF upload: {file_path}")
+            # Import here to avoid circular imports
+            from storage.pdf_handler import validate_pdf, extract_text_from_pdf, get_pdf_metadata
 
-            # Step 1: Validate PDF file
-            validation_result = self.pdf_handler.validate_pdf(file_path)
-
-            if not validation_result['valid']:
-                return AgentResponse(
+            # Step 1: Validate PDF
+            validation_result = validate_pdf(file_path)
+            if not validation_result.get('valid'):
+                return self._create_response(
                     success=False,
-                    error=validation_result['error'],
-                    agent_name=self.agent_name,
-                    duration=time.time() - start_time
+                    error=validation_result.get('error', 'PDF validation failed'),
+                    execution_time=time.time() - start_time
                 )
 
-            # Step 2: Extract text and metadata
-            extraction_result = self.pdf_handler.extract_text_from_pdf(file_path, enable_ocr=enable_ocr)
+            # Step 2: Extract metadata
+            metadata = get_pdf_metadata(file_path)
 
-            # Step 3: Get AI analysis of content
-            text_sample = extraction_result['full_text'][:3000]  # First 3000 chars
+            # Step 3: Extract text
+            extraction_result = extract_text_from_pdf(file_path)
+            full_text = extraction_result.get('full_text', '')[:5000]  # Limit for LLM
 
-            ai_prompt = f"""
-Analyze this PDF content sample and determine:
-1. Primary language
-2. Main topic/subject
-3. Suitability for language learning
-4. Content type and difficulty
+            # Step 4: Detect language
+            detected_language = extraction_result.get('detected_language', 'en')
 
-PDF Sample:
-{text_sample}
+            # Step 5: AI analysis of content
+            ai_analysis = self._analyze_content_with_ai(full_text)
 
-Metadata:
-- Pages: {extraction_result['pages_count']}
-- Detected Language: {extraction_result['detected_language']}
-"""
-
-            ai_response = self.generate_response(ai_prompt)
-            ai_analysis = self.parse_json_response(ai_response)
-
-            # Combine results
-            result_data = {
-                'valid': True,
-                'file_path': file_path,
-                'user_id': user_id,
-                'page_count': extraction_result['pages_count'],
-                'file_size': validation_result['file_size'],
-                'detected_language': extraction_result['detected_language'],
-                'language_confidence': extraction_result['language_confidence'],
-                'metadata': extraction_result['metadata'],
+            response_data = {
+                'file_size': validation_result.get('file_size', 0),
+                'page_count': validation_result.get('page_count', 0),
+                'detected_language': detected_language,
+                'metadata': metadata,
+                'extraction_status': 'success' if extraction_result.get('full_text') else 'partial',
                 'ai_analysis': ai_analysis,
-                'warnings': validation_result.get('warnings', []),
-                'extraction_time': extraction_result['extraction_time']
+                'warnings': validation_result.get('warnings', [])
             }
 
-            duration = time.time() - start_time
-            self.log_performance('pdf_upload', duration, True)
-
-            self.logger.info(
-                f"PDF upload processed successfully",
-                extra={
-                    'file_path': file_path,
-                    'pages': extraction_result['pages_count'],
-                    'language': extraction_result['detected_language'],
-                    'duration': duration
-                }
-            )
-
-            return AgentResponse(
+            execution_time = time.time() - start_time
+            return self._create_response(
                 success=True,
-                data=result_data,
-                agent_name=self.agent_name,
-                duration=duration
+                data=response_data,
+                execution_time=execution_time
             )
 
         except Exception as e:
-            self.logger.error(f"PDF upload processing failed: {e}", exc_info=True)
-            return AgentResponse(
+            execution_time = time.time() - start_time
+            error_msg = f"PDF processing failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return self._create_response(
                 success=False,
-                error=str(e),
-                agent_name=self.agent_name,
-                duration=time.time() - start_time
+                error=error_msg,
+                execution_time=execution_time
             )
 
-    def validate_file(self, file_path: str) -> Dict[str, Any]:
-        """Quick validation without full processing"""
-        return self.pdf_handler.validate_pdf(file_path)
+    def _analyze_content_with_ai(self, text: str) -> dict:
+        """
+        Use Gemini AI to analyze PDF content.
 
-    def detect_language(self, text: str) -> Dict[str, Any]:
-        """Detect language of text"""
-        return self.pdf_handler._detect_language(text)
+        Args:
+            text: Extracted text from PDF
 
-    def extract_metadata(self, file_path: str) -> Dict[str, Any]:
-        """Extract PDF metadata only"""
-        return self.pdf_handler.get_pdf_metadata(file_path)
+        Returns:
+            Dictionary with analysis results
+        """
+        try:
+            prompt = f"""Analyze this PDF text and provide:
+1. Main topic (one-liner)
+2. Estimated difficulty level (Beginner/Intermediate/Advanced)
+3. Key subjects covered (comma-separated)
+4. Language of the document (ISO 639-1 code)
+
+Text:
+{text[:2000]}
+
+Respond in JSON format:
+{{"topic": "...", "difficulty": "...", "subjects": "...", "language": "..."}}"""
+
+            success, response = self.generate_text(prompt, temperature=0.3, max_tokens=500)
+
+            if success:
+                success, parsed = self.parse_json_response(response)
+                if success:
+                    return parsed
+
+            # Fallback analysis
+            return {
+                'topic': 'Document',
+                'difficulty': 'Intermediate',
+                'subjects': 'General',
+                'language': 'en'
+            }
+
+        except Exception as e:
+            logger.warning(f"AI analysis failed: {str(e)}, using defaults")
+            return {
+                'topic': 'Document',
+                'difficulty': 'Intermediate',
+                'subjects': 'General',
+                'language': 'en'
+            }
+

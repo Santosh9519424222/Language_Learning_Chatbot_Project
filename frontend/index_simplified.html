@@ -180,7 +180,7 @@
                 <div class="chat-messages" id="chatMessages"></div>
 
                 <div class="flex-row" style="gap:8px;">
-                    <textarea id="chatInput" placeholder="Ask a question..." style="min-height:50px; resize:vertical;" onkeypress="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendMessage(); }"></textarea>
+                    <textarea id="chatInput" placeholder="Ask a question..." style="min-height:50px; resize:vertical;"></textarea>
                     <button onclick="sendMessage()" style="align-self:flex-end; background:#667eea;">📤 Send</button>
                 </div>
                 <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
@@ -235,20 +235,12 @@
         }
 
         function showStatus(data) {
-            const status = data.status || 'unknown';
-            const statusClass = status === 'healthy' ? 'ok' : status === 'degraded' ? 'warning' : 'error';
-            const agentsActive = data.agents_active || 0;
-            const geminiStatus = data.services?.gemini_api || 'unknown';
-            const geminiClass = geminiStatus === 'healthy' ? 'ok' : 'warning';
-            const quotaRemaining = data.gemini_quota?.requests_remaining || 0;
-            const quotaMax = data.gemini_quota?.max_requests_per_minute || 60;
-
             const html = `
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-                    <div><strong>Status:</strong> <span class="status-badge status-${statusClass}">${status}</span></div>
-                    <div><strong>Agents:</strong> ${agentsActive}/7</div>
-                    <div><strong>Gemini:</strong> <span class="status-badge status-${geminiClass}">${geminiStatus}</span></div>
-                    <div><strong>Quota:</strong> ${quotaRemaining}/${quotaMax}</div>
+                    <div><strong>Status:</strong> <span class="status-badge status-${data.overall_status === 'healthy' ? 'ok' : 'warning'}">${data.overall_status}</span></div>
+                    <div><strong>Agents:</strong> ${data.agents_active}/${data.agents_total}</div>
+                    <div><strong>Gemini:</strong> <span class="status-badge status-ok">${data.gemini_api}</span></div>
+                    <div><strong>Quota:</strong> ${data.gemini_quota?.requests_remaining || 0}/60</div>
                 </div>
             `;
             document.getElementById('statusContent').innerHTML = html;
@@ -323,13 +315,7 @@
                 const response = await fetch(API_BASE + '/api/chat/question', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        file_id: currentPDF.file_id,
-                        user_id: currentPDF.user_id || '00000000-0000-0000-0000-000000000000',
-                        question: msg,
-                        language: 'English',
-                        user_language_level: 'Intermediate'
-                    })
+                    body: JSON.stringify({ file_id: currentPDF.file_id, question: msg, language_level: 'Intermediate' })
                 });
                 const data = await response.json();
                 if (response.ok) {

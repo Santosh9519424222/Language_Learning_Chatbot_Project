@@ -1,6 +1,6 @@
 """
 Extraction Agent
-Extracts topics, vocabulary, grammar points from PDF content
+Extracts topics, vocabulary, and grammar points from PDFs
 
 Author: Santosh Yadav
 Date: November 2025
@@ -8,217 +8,223 @@ Date: November 2025
 
 import logging
 import time
-from typing import Dict, Any, List
-
-from agents.base_agent import BaseAgent, AgentResponse
-from prompts.system_prompts import EXTRACTION_AGENT_PROMPT
-from config.gemini_config import GeminiClient
-from storage.vector_store import ChromaVectorStore
-from storage.pdf_handler import PDFHandler
+from typing import List, Dict, Any, Optional
+from .base_agent import LLMAgent, StorageAgent, AgentResponse
 
 logger = logging.getLogger(__name__)
 
 
-class ExtractionAgent(BaseAgent):
+class ExtractionAgent(LLMAgent, StorageAgent):
     """
-    Agent responsible for extracting structured learning content from PDFs.
-    Extracts topics, vocabulary, grammar points, and learning objectives.
+    Agent for extracting educational content from PDFs.
+
+    Responsibilities:
+    - Extract topics and subtopics
+    - Identify key vocabulary
+    - Extract grammar points
+    - Determine difficulty levels
+    - Create vector embeddings
     """
 
-    def __init__(self, gemini_client: GeminiClient, vector_store: ChromaVectorStore):
+    def __init__(self, gemini_client, vector_store=None, model: str = "gemini-pro"):
         """
         Initialize Extraction Agent.
 
         Args:
-            gemini_client: Gemini API client instance
-            vector_store: ChromaDB vector store instance
+            gemini_client: Initialized GeminiClient
+            vector_store: Optional ChromaVectorStore
+            model: LLM model to use
         """
-        super().__init__(
-            gemini_client=gemini_client,
-            agent_name="ExtractionAgent",
-            system_prompt=EXTRACTION_AGENT_PROMPT,
-            temperature=0.5
-        )
+        LLMAgent.__init__(self, gemini_client, name="extraction", model=model)
         self.vector_store = vector_store
-        self.pdf_handler = PDFHandler()
 
-    def process(self, file_path: str, pdf_id: str, language: str) -> AgentResponse:
+    def process(
+        self,
+        file_path: str,
+        pdf_id: str,
+        language: str = "en"
+    ) -> AgentResponse:
         """
-        Extract topics, vocabulary, and grammar from PDF.
+        Extract educational content from PDF.
 
         Args:
             file_path: Path to PDF file
             pdf_id: PDF identifier
-            language: Detected language
+            language: Document language (ISO 639-1)
 
         Returns:
-            AgentResponse: Extracted topics and learning content
+            AgentResponse with extracted topics and vocabulary
         """
         start_time = time.time()
 
         try:
-            self.logger.info(f"Extracting content from PDF: {pdf_id}")
+            from storage.pdf_handler import extract_text_from_pdf, extract_text_chunks
 
-            # Step 1: Extract full text
-            extraction_result = self.pdf_handler.extract_text_from_pdf(file_path)
-            full_text = extraction_result['full_text']
+            # Extract full text
+            extraction_result = extract_text_from_pdf(file_path)
+            full_text = extraction_result.get('full_text', '')
+            text_by_page = extraction_result.get('text_by_page', {})
 
-            # Step 2: Create chunks for vector store
-            chunks = self.pdf_handler.extract_text_chunks(file_path)
+            if not full_text:
+                return self._create_response(
+                    success=False,
+                    error="No text could be extracted from PDF",
+                    execution_time=time.time() - start_time
+                )
 
-            # Step 3: Add chunks to vector store
-            self.vector_store.add_pdf_chunks(pdf_id, chunks)
-            self.logger.info(f"Added {len(chunks)} chunks to vector store")
+            # Extract topics
+            topics = self._extract_topics(full_text, language)
 
-            # Step 4: Extract topics using AI
-            topics = self._extract_topics_with_ai(full_text, language)
-
-            # Step 5: Extract vocabulary
+            # Extract vocabulary
             vocabulary = self._extract_vocabulary(full_text, language)
 
-            # Step 6: Extract grammar points
-            grammar_points = self._extract_grammar_points(full_text, language)
+            # Extract grammar points (if language learning focused)
+            grammar_points = self._extract_grammar_points(full_text, language) if language != "en" else []
 
-            result_data = {
-                'pdf_id': pdf_id,
+            # Create chunks for vector store
+            chunks = extract_text_chunks(file_path, chunk_size=1000, overlap=200)
+
+            # Index chunks in vector store if available
+            if self.vector_store and chunks:
+                try:
+                    self.vector_store.add_pdf_chunks(pdf_id, chunks)
+                    logger.info(f"Indexed {len(chunks)} chunks for PDF {pdf_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to index chunks in vector store: {str(e)}")
+
+            response_data = {
                 'topics': topics,
-                'total_topics': len(topics),
-                'vocabulary': vocabulary,
+                'key_vocabulary': vocabulary,
                 'grammar_points': grammar_points,
                 'chunks_indexed': len(chunks),
-                'language': language,
-                'extraction_timestamp': time.time()
+                'text_length': len(full_text),
+                'pages_processed': len(text_by_page)
             }
 
-            duration = time.time() - start_time
-            self.log_performance('content_extraction', duration, True)
-
-            self.logger.info(
-                f"Content extraction completed",
-                extra={
-                    'pdf_id': pdf_id,
-                    'topics': len(topics),
-                    'vocabulary': len(vocabulary),
-                    'chunks': len(chunks),
-                    'duration': duration
-                }
-            )
-
-            return AgentResponse(
+            execution_time = time.time() - start_time
+            return self._create_response(
                 success=True,
-                data=result_data,
-                agent_name=self.agent_name,
-                duration=duration
+                data=response_data,
+                execution_time=execution_time
             )
 
         except Exception as e:
-            self.logger.error(f"Content extraction failed: {e}", exc_info=True)
-            return AgentResponse(
+            execution_time = time.time() - start_time
+            error_msg = f"Content extraction failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return self._create_response(
                 success=False,
-                error=str(e),
-                agent_name=self.agent_name,
-                duration=time.time() - start_time
+                error=error_msg,
+                execution_time=execution_time
             )
 
-    def _extract_topics_with_ai(self, text: str, language: str) -> List[Dict[str, Any]]:
-        """Extract topics using AI analysis"""
-        # Split text into manageable chunks (Gemini has token limits)
-        max_chars = 10000
-        text_chunks = [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
+    def _extract_topics(self, text: str, language: str = "en") -> List[Dict[str, Any]]:
+        """
+        Extract main topics from text using AI.
 
-        all_topics = []
+        Args:
+            text: Document text
+            language: Document language
 
-        for i, chunk in enumerate(text_chunks[:5]):  # Limit to first 5 chunks
-            prompt = f"""
-Analyze this section of a {language} learning PDF and extract topics.
-
-Text Section {i+1}:
-{chunk}
-
-Extract:
-- Main topics and subtopics
-- Key vocabulary for each topic
-- Grammar points covered
-- Difficulty level
-"""
-
-            try:
-                response = self.generate_response(prompt)
-                extracted = self.parse_json_response(response)
-
-                if 'topics' in extracted and isinstance(extracted['topics'], list):
-                    all_topics.extend(extracted['topics'])
-
-            except Exception as e:
-                self.logger.warning(f"Failed to extract from chunk {i+1}: {e}")
-                continue
-
-        return all_topics
-
-    def _extract_vocabulary(self, text: str, language: str) -> List[Dict[str, Any]]:
-        """Extract key vocabulary items"""
-        # Use AI to identify important vocabulary
-        text_sample = text[:5000]  # Use first 5000 chars
-
-        prompt = f"""
-From this {language} learning content, extract the 20 most important vocabulary words.
+        Returns:
+            List of topic dictionaries
+        """
+        try:
+            prompt = f"""Extract the main topics from this educational text. For each topic, provide:
+- name: Topic title
+- description: Brief explanation (1-2 sentences)
+- difficulty: Beginner/Intermediate/Advanced
+- key_vocabulary: Important terms (comma-separated)
 
 Text:
-{text_sample}
+{text[:3000]}
 
-For each word provide:
-- The word
-- Definition
-- Example sentence
-- Difficulty level
-"""
+Return as JSON array:
+[{{"name": "...", "description": "...", "difficulty": "...", "key_vocabulary": "..."}}]"""
 
-        try:
-            response = self.generate_response(prompt)
-            extracted = self.parse_json_response(response)
+            success, response = self.generate_text(prompt, temperature=0.5, max_tokens=1000)
 
-            if 'key_vocabulary' in extracted:
-                return extracted['key_vocabulary']
-            elif 'vocabulary' in extracted:
-                return extracted['vocabulary']
-            else:
-                return []
+            if success:
+                success, parsed = self.parse_json_response(response)
+                if success and isinstance(parsed, list):
+                    return parsed[:10]  # Limit to 10 topics
+
+            # Fallback
+            return [{"name": "Document Content", "description": "Main topic", "difficulty": "Intermediate", "key_vocabulary": ""}]
 
         except Exception as e:
-            self.logger.warning(f"Vocabulary extraction failed: {e}")
-            return []
+            logger.warning(f"Topic extraction failed: {str(e)}, using default")
+            return [{"name": "Document Content", "description": "Main topic", "difficulty": "Intermediate", "key_vocabulary": ""}]
 
-    def _extract_grammar_points(self, text: str, language: str) -> List[str]:
-        """Extract grammar points covered"""
-        text_sample = text[:5000]
+    def _extract_vocabulary(self, text: str, language: str = "en") -> List[Dict[str, str]]:
+        """
+        Extract key vocabulary from text.
 
-        prompt = f"""
-Identify the main grammar concepts covered in this {language} learning content.
+        Args:
+            text: Document text
+            language: Document language
+
+        Returns:
+            List of vocabulary items with definitions
+        """
+        try:
+            prompt = f"""Extract 10-15 key vocabulary terms from this text. For each term:
+- word: The term
+- definition: Definition in simple terms
+- difficulty: Beginner/Intermediate/Advanced
 
 Text:
-{text_sample}
+{text[:2000]}
 
-List the grammar topics/rules discussed.
-"""
+Return as JSON array:
+[{{"word": "...", "definition": "...", "difficulty": "..."}}]"""
 
-        try:
-            response = self.generate_response(prompt)
-            extracted = self.parse_json_response(response)
+            success, response = self.generate_text(prompt, temperature=0.3, max_tokens=800)
 
-            if 'grammar_points' in extracted:
-                return extracted['grammar_points']
-            else:
-                return []
+            if success:
+                success, parsed = self.parse_json_response(response)
+                if success and isinstance(parsed, list):
+                    return parsed[:15]
 
-        except Exception as e:
-            self.logger.warning(f"Grammar extraction failed: {e}")
             return []
 
-    def extract_topics(self, text: str) -> Dict[str, Any]:
-        """Public method to extract topics from text"""
-        return self._extract_topics_with_ai(text, "Unknown")
+        except Exception as e:
+            logger.warning(f"Vocabulary extraction failed: {str(e)}")
+            return []
 
-    def identify_difficulty_level(self, text: str) -> str:
-        """Estimate difficulty level of content"""
-        return self.pdf_handler._estimate_difficulty(text)
+    def _extract_grammar_points(self, text: str, language: str = "en") -> List[str]:
+        """
+        Extract grammar points relevant to language learning.
+
+        Args:
+            text: Document text
+            language: Document language
+
+        Returns:
+            List of grammar points
+        """
+        try:
+            if language == "en":
+                return []
+
+            prompt = f"""Identify 5-8 important grammar patterns or rules from this {language} text.
+
+Text:
+{text[:2000]}
+
+Return as JSON array of strings:
+["grammar point 1", "grammar point 2", ...]"""
+
+            success, response = self.generate_text(prompt, temperature=0.3, max_tokens=500)
+
+            if success:
+                success, parsed = self.parse_json_response(response)
+                if success and isinstance(parsed, list):
+                    return parsed[:8]
+
+            return []
+
+        except Exception as e:
+            logger.warning(f"Grammar extraction failed: {str(e)}")
+            return []
 

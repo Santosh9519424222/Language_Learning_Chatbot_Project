@@ -85,18 +85,23 @@ async def lifespan(app: FastAPI):
             logger.warning("DEGRADED_MODE enabled: Skipping database initialization")
 
         # Initialize Chroma Vector Store (only if not in degraded mode)
+        vector_store = None
         if not degraded_mode:
-            logger.info("Initializing Chroma Vector Store...")
-            persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")
-            os.makedirs(persist_dir, exist_ok=True)
-            # Runtime import to avoid importing chromadb unless needed
-            from storage.vector_store import ChromaVectorStore
-            vector_store = ChromaVectorStore(persist_directory=persist_dir)
-            logger.info(f"Vector store initialized at {persist_dir}")
+            try:
+                logger.info("Initializing Chroma Vector Store...")
+                persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")
+                os.makedirs(persist_dir, exist_ok=True)
+                # Runtime import to avoid importing chromadb unless needed
+                from storage.vector_store import ChromaVectorStore
+                vector_store = ChromaVectorStore(persist_directory=persist_dir)
+                logger.info(f"Vector store initialized at {persist_dir}")
+            except Exception as ve:
+                logger.warning(f"Vector store initialization failed: {ve}. Continuing without vector search capabilities.")
         else:
             logger.warning("DEGRADED_MODE enabled: Skipping vector store initialization")
 
         # Initialize Gemini API Client (optional in degraded)
+        gemini_client = None
         try:
             logger.info("Initializing Gemini API Client...")
             gemini_client = GeminiClient()
@@ -248,8 +253,9 @@ async def health_check(request: Request) -> Dict[str, Any]:
         try:
             if degraded_mode:
                 raise RuntimeError("degraded mode")
+            from sqlalchemy import text
             db = next(get_db_session())
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             health_status["services"]["database"] = "healthy"
             db.close()
         except Exception as e:
